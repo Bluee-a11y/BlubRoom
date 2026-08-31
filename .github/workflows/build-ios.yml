@@ -42,28 +42,25 @@ jobs:
           name: BlubRoom-Xcode
           path: ios-project
 
-      - name: Compile application
+      - name: Find and compile application
         working-directory: ios-project
         run: |
-          xcodebuild \
-            -project Unity-iPhone.xcodeproj \
-            -scheme Unity-iPhone \
-            -configuration Release \
-            -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO \
-            CONFIGURATION_BUILD_DIR="$PWD/output"
+          echo "Searching for the Xcode project..."
+          find . -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
 
-      - name: Package unsigned IPA
-        working-directory: ios-project
-        run: |
-          APP_PATH=$(find output -maxdepth 1 -name "*.app" -print -quit)
-          test -n "$APP_PATH"
-          mkdir Payload
-          cp -R "$APP_PATH" Payload/
-          ditto -c -k --sequesterRsrc --keepParent Payload BlubRoom-unsigned.ipa
+          WORKSPACE=$(find . -name "*.xcworkspace" ! -name "project.xcworkspace" -print -quit)
+          PROJECT=$(find . -name "Unity-iPhone.xcodeproj" -print -quit)
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: BlubRoom-iOS
-          path: ios-project/BlubRoom-unsigned.ipa
+          if [ -n "$WORKSPACE" ]; then
+            echo "Using workspace: $WORKSPACE"
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme Unity-iPhone \
+              -configuration Release \
+              -sdk iphoneos \
+              CODE_SIGNING_ALLOWED=NO \
+              CONFIGURATION_BUILD_DIR="$PWD/output"
+          elif [ -n "$PROJECT" ]; then
+            echo "Using project: $PROJECT"
+            xcodebuild \
+              -project "$PROJECT"
