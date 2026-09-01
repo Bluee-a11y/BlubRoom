@@ -14,4 +14,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/MakerWorld.unity
     guid: 2e906f8f88bea9443a764bd43ea3c3f8
+  - enabled: 1
+    path: Assets/Scenes/Dodgeball.unity
+    guid: d0d6eba11d0d4e30b411a6ea5ce60001
   m_configObjects: {}

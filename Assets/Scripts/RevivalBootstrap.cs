@@ -30,6 +30,11 @@ namespace ClubhousePC
                 MakerWorldBootstrap.Build();
                 return;
             }
+            if (SceneManager.GetActiveScene().name == "Dodgeball")
+            {
+                DodgeballBootstrap.Build();
+                return;
+            }
             // Once a scene contains user-created objects it is never regenerated.
             // This protects customized maps and deleted furniture.
             if (SceneManager.GetActiveScene().rootCount > 0) return;

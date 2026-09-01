@@ -10,12 +10,18 @@ namespace ClubhousePC
     [RequireComponent(typeof(CharacterController))]
     public sealed class NetworkPlayer : NetworkBehaviour
     {
+        public const byte NoTeam = 0;
+        public const byte BlueTeam = 1;
+        public const byte RedTeam = 2;
+
         private readonly NetworkVariable<Vector3> syncedPosition = new();
         private readonly NetworkVariable<Quaternion> syncedRotation = new(Quaternion.identity);
         private readonly NetworkVariable<bool> syncedCrouching = new();
         private readonly NetworkVariable<FixedString64Bytes> syncedName = new();
         private readonly NetworkVariable<FixedString128Bytes> syncedPlayerId = new();
         public readonly NetworkVariable<bool> IsAdmin = new(false);
+        public readonly NetworkVariable<byte> DodgeballTeam = new(NoTeam);
+        public readonly NetworkVariable<bool> DodgeballOut = new(false);
 
         private GameObject avatar;
         private PlayerMotor localMotor;
@@ -36,10 +42,19 @@ namespace ClubhousePC
         private GUIStyle adminHeading;
         private static float nextAdminSpawn;
         private GameObject localAvatarHead;
+        private Material avatarMaterial;
 
         public override void OnNetworkSpawn()
         {
-            transform.position = new Vector3((int)OwnerClientId * 1.5f, 1.1f, -3.5f);
+            var inDodgeball = SceneManager.GetActiveScene().name == "Dodgeball";
+            if (inDodgeball && IsServer)
+            {
+                DodgeballTeam.Value = ChooseDodgeballTeam();
+                DodgeballOut.Value = false;
+            }
+            transform.position = inDodgeball
+                ? DodgeballSpawn(DodgeballTeam.Value, OwnerClientId)
+                : new Vector3((int)OwnerClientId * 1.5f, 1.1f, -3.5f);
             if (IsServer)
             {
                 lastClientPosition = transform.position;
@@ -50,7 +65,9 @@ namespace ClubhousePC
             CreateNameTag();
             CreateChatBubble();
             syncedName.OnValueChanged += OnNameChanged;
+            DodgeballTeam.OnValueChanged += OnDodgeballTeamChanged;
             OnNameChanged(default, syncedName.Value);
+            OnDodgeballTeamChanged(NoTeam, DodgeballTeam.Value);
 
             if (!IsOwner) return;
 
@@ -84,6 +101,7 @@ namespace ClubhousePC
                 gameObject.AddComponent<MakerTool>().View = camera;
             gameObject.AddComponent<PrototypeHUD>();
             gameObject.AddComponent<MobileControls>();
+            if (inDodgeball) ApplyDodgeballOwnerState();
         }
 
         private async void RegisterPlayerIdentity()
@@ -118,6 +136,7 @@ namespace ClubhousePC
         private void Update()
         {
             if (!IsSpawned) return;
+            EnforceDodgeballCourt();
             HandleAdminInput();
             if (IsOwner && localMotor != null && localAvatarHead != null)
                 localAvatarHead.SetActive(localMotor.IsThirdPerson);
@@ -313,6 +332,115 @@ namespace ClubhousePC
         public override void OnNetworkDespawn()
         {
             syncedName.OnValueChanged -= OnNameChanged;
+            DodgeballTeam.OnValueChanged -= OnDodgeballTeamChanged;
+        }
+
+        private byte ChooseDodgeballTeam()
+        {
+            var blueCount = 0;
+            var redCount = 0;
+            foreach (var player in FindObjectsOfType<NetworkPlayer>())
+            {
+                if (player == this) continue;
+                if (player.DodgeballTeam.Value == BlueTeam) blueCount++;
+                if (player.DodgeballTeam.Value == RedTeam) redCount++;
+            }
+            return blueCount <= redCount ? BlueTeam : RedTeam;
+        }
+
+        private static Vector3 DodgeballSpawn(byte team, ulong clientId)
+        {
+            var x = ((int)(clientId % 5) - 2) * 2.1f;
+            return new Vector3(x, 1.1f, team == RedTeam ? 5.5f : -5.5f);
+        }
+
+        private Vector3 DodgeballSpectatorPosition()
+        {
+            var x = ((int)(OwnerClientId % 5) - 2) * 1.7f;
+            return new Vector3(x, 1.1f, DodgeballTeam.Value == RedTeam ? 10.5f : -10.5f);
+        }
+
+        private void EnforceDodgeballCourt()
+        {
+            if (!IsOwner || SceneManager.GetActiveScene().name != "Dodgeball" ||
+                localMotor == null || !localMotor.enabled || DodgeballOut.Value) return;
+
+            var position = transform.position;
+            position.x = Mathf.Clamp(position.x, -11.2f, 11.2f);
+            if (DodgeballTeam.Value == BlueTeam)
+                position.z = Mathf.Clamp(position.z, -7.5f, -0.65f);
+            else if (DodgeballTeam.Value == RedTeam)
+                position.z = Mathf.Clamp(position.z, 0.65f, 7.5f);
+            if (position.y < -4f) position = DodgeballSpawn(DodgeballTeam.Value, OwnerClientId);
+            if ((position - transform.position).sqrMagnitude > 0.0001f) TeleportLocalPlayer(position);
+        }
+
+        public void ServerHitByDodgeball(ulong throwerClientId)
+        {
+            if (!IsServer || SceneManager.GetActiveScene().name != "Dodgeball" ||
+                DodgeballOut.Value || throwerClientId == OwnerClientId ||
+                !NetworkManager.ConnectedClients.TryGetValue(throwerClientId, out var throwerClient)) return;
+
+            var thrower = throwerClient.PlayerObject != null
+                ? throwerClient.PlayerObject.GetComponent<NetworkPlayer>() : null;
+            if (thrower == null || thrower.DodgeballTeam.Value == NoTeam ||
+                thrower.DodgeballTeam.Value == DodgeballTeam.Value) return;
+
+            DodgeballOut.Value = true;
+            antiCheatGraceUntil = Time.unscaledTime + 2f;
+            MoveDodgeballOwnerClientRpc(DodgeballSpectatorPosition(), true,
+                TargetClient(OwnerClientId));
+        }
+
+        public void ServerResetDodgeballPlayer()
+        {
+            if (!IsServer || SceneManager.GetActiveScene().name != "Dodgeball") return;
+            DodgeballOut.Value = false;
+            antiCheatGraceUntil = Time.unscaledTime + 2f;
+            MoveDodgeballOwnerClientRpc(DodgeballSpawn(DodgeballTeam.Value, OwnerClientId), false,
+                TargetClient(OwnerClientId));
+        }
+
+        [ClientRpc]
+        private void MoveDodgeballOwnerClientRpc(Vector3 position, bool eliminated,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsOwner) return;
+            TeleportLocalPlayer(position);
+            if (localMotor != null) localMotor.enabled = !eliminated;
+        }
+
+        private static ClientRpcParams TargetClient(ulong clientId)
+        {
+            return new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+            };
+        }
+
+        private void ApplyDodgeballOwnerState()
+        {
+            if (!IsOwner || SceneManager.GetActiveScene().name != "Dodgeball") return;
+            TeleportLocalPlayer(DodgeballOut.Value
+                ? DodgeballSpectatorPosition()
+                : DodgeballSpawn(DodgeballTeam.Value, OwnerClientId));
+            if (localMotor != null) localMotor.enabled = !DodgeballOut.Value;
+        }
+
+        private void TeleportLocalPlayer(Vector3 position)
+        {
+            var controller = GetComponent<CharacterController>();
+            if (controller != null) controller.enabled = false;
+            transform.position = position;
+            if (controller != null) controller.enabled = true;
+        }
+
+        private void OnDodgeballTeamChanged(byte previous, byte current)
+        {
+            if (avatarMaterial != null && SceneManager.GetActiveScene().name == "Dodgeball")
+                avatarMaterial.color = current == RedTeam
+                    ? new Color(1f, 0.12f, 0.12f)
+                    : new Color(0.08f, 0.42f, 1f);
         }
 
         public void SetDisplayName(string requestedName)
@@ -403,7 +531,12 @@ namespace ClubhousePC
             var fallback = new GameObject("Fallback");
             fallback.transform.SetParent(avatar.transform, false);
             var material = new Material(Shader.Find("Standard"));
-            material.color = Color.HSVToRGB((OwnerClientId * 0.23f) % 1f, 0.75f, 1f);
+            avatarMaterial = material;
+            material.color = SceneManager.GetActiveScene().name == "Dodgeball"
+                ? DodgeballTeam.Value == RedTeam
+                    ? new Color(1f, 0.12f, 0.12f)
+                    : new Color(0.08f, 0.42f, 1f)
+                : Color.HSVToRGB((OwnerClientId * 0.23f) % 1f, 0.75f, 1f);
 
             var body = MakePart("Body", PrimitiveType.Capsule, new Vector3(0, 0.72f, 0), new Vector3(0.62f, 0.58f, 0.62f), material);
             var head = MakePart("Head", PrimitiveType.Sphere, new Vector3(0, 1.55f, 0), Vector3.one * 0.48f, material);

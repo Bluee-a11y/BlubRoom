@@ -18,7 +18,8 @@ namespace ClubhousePC.Editor
             {
                 new EditorBuildSettingsScene("Assets/Scenes/Main.unity", true),
                 new EditorBuildSettingsScene("Assets/Scenes/BlubCenter.unity", true),
-                new EditorBuildSettingsScene("Assets/Scenes/MakerWorld.unity", true)
+                new EditorBuildSettingsScene("Assets/Scenes/MakerWorld.unity", true),
+                new EditorBuildSettingsScene("Assets/Scenes/Dodgeball.unity", true)
             };
         }
     }

@@ -214,6 +214,29 @@ namespace ClubhousePC
                 return;
             }
 
+            if (SceneManager.GetActiveScene().name == "Dodgeball")
+            {
+                GUI.Label(new Rect(Screen.width - 352, 96, 315, 24), "Red team vs blue team");
+                if (manager.IsHost)
+                {
+                    GUI.Label(new Rect(Screen.width - 352, 126, 250, 24), "Match code: " + hostCode);
+                    if (GUI.Button(new Rect(Screen.width - 105, 123, 67, 27), "COPY"))
+                        GUIUtility.systemCopyBuffer = hostCode;
+                }
+                GUI.Label(new Rect(Screen.width - 352, 162, 78, 24), "Join code:");
+                joinCode = GUI.TextField(new Rect(Screen.width - 270, 160, 232, 26), joinCode.ToUpperInvariant(), 12);
+                GUI.enabled = !busy;
+                if (GUI.Button(new Rect(Screen.width - 352, 196, 314, 36), "JOIN DODGEBALL MATCH"))
+                    StartClient();
+                if (GUI.Button(new Rect(Screen.width - 352, 244, 314, 40), "RETURN TO BLUBCENTER"))
+                    EnterBlubCenter();
+                if (GUI.Button(new Rect(Screen.width - 352, 294, 314, 40), "RETURN TO BLUBHOUSE"))
+                    ReturnToBlubhouse();
+                GUI.enabled = true;
+                GUI.Label(new Rect(Screen.width - 352, 350, 314, 32), status);
+                return;
+            }
+
             if (SceneManager.GetActiveScene().name == "BlubCenter")
             {
                 GUI.Label(new Rect(Screen.width - 352, 96, 315, 24), "Public BlubCenter session");
@@ -228,12 +251,14 @@ namespace ClubhousePC
                 GUI.enabled = !busy;
                 if (GUI.Button(new Rect(Screen.width - 352, 196, 314, 34), "JOIN BLUBCENTER SERVER"))
                     StartClient();
-                if (GUI.Button(new Rect(Screen.width - 352, 242, 314, 36), "GO TO MAKERWORLD"))
+                if (GUI.Button(new Rect(Screen.width - 352, 238, 314, 32), "GO TO MAKERWORLD"))
                     EnterMakerWorld();
-                if (GUI.Button(new Rect(Screen.width - 352, 288, 314, 40), "RETURN TO BLUBHOUSE"))
+                if (GUI.Button(new Rect(Screen.width - 352, 276, 314, 32), "GO TO DODGEBALL"))
+                    EnterDodgeball();
+                if (GUI.Button(new Rect(Screen.width - 352, 314, 314, 34), "RETURN TO BLUBHOUSE"))
                     ReturnToBlubhouse();
                 GUI.enabled = true;
-                GUI.Label(new Rect(Screen.width - 352, 342, 314, 32), status);
+                GUI.Label(new Rect(Screen.width - 352, 356, 314, 32), status);
                 return;
             }
 
@@ -425,6 +450,24 @@ namespace ClubhousePC
             await LoadingScreen.LoadScene("MakerWorld");
             intentionalShutdown = false;
             status = "MakerWorld — press F to build";
+            busy = false;
+            StartHost();
+        }
+
+        public async void EnterDodgeball()
+        {
+            if (busy) return;
+            busy = true;
+            status = "Loading Dodgeball…";
+            if (NetworkManager.Singleton.IsListening)
+            {
+                intentionalShutdown = true;
+                NetworkManager.Singleton.Shutdown();
+                await System.Threading.Tasks.Task.Delay(150);
+            }
+            await LoadingScreen.LoadScene("Dodgeball");
+            intentionalShutdown = false;
+            status = "Dodgeball — share the match code";
             busy = false;
             StartHost();
         }

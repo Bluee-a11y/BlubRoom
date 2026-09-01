@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace ClubhousePC
 {
@@ -13,6 +14,8 @@ namespace ClubhousePC
         private readonly NetworkVariable<Vector3> syncedPosition = new();
         private readonly NetworkVariable<Quaternion> syncedRotation = new(Quaternion.identity);
         private float nextStateSync;
+        private ulong lastThrower = ulong.MaxValue;
+        private bool dodgeballThrowArmed;
 
         private void Awake() => body = GetComponent<Rigidbody>();
 
@@ -79,6 +82,7 @@ namespace ClubhousePC
         {
             if (holder != ulong.MaxValue && holder != rpc.Receive.SenderClientId) return;
             holder = rpc.Receive.SenderClientId;
+            dodgeballThrowArmed = false;
             serverHoldPosition = transform.position;
             body.isKinematic = true;
             body.velocity = Vector3.zero;
@@ -102,6 +106,40 @@ namespace ClubhousePC
             holder = ulong.MaxValue;
             body.isKinematic = false;
             body.velocity = Vector3.ClampMagnitude(throwVelocity, 15f);
+            lastThrower = rpc.Receive.SenderClientId;
+            dodgeballThrowArmed = SceneManager.GetActiveScene().name == "Dodgeball" &&
+                                  throwVelocity.magnitude >= 3.5f;
+        }
+
+        private void OnCollisionEnter(Collision collision)
+        {
+            if (!IsServer || !dodgeballThrowArmed ||
+                SceneManager.GetActiveScene().name != "Dodgeball") return;
+
+            var player = collision.collider.GetComponentInParent<NetworkPlayer>();
+            if (player != null)
+            {
+                if (player.OwnerClientId == lastThrower) return;
+                player.ServerHitByDodgeball(lastThrower);
+            }
+            dodgeballThrowArmed = false;
+        }
+
+        public void ServerReturnToCourtIfLost()
+        {
+            if (!IsServer || holder != ulong.MaxValue ||
+                SceneManager.GetActiveScene().name != "Dodgeball") return;
+            if (transform.position.y >= -3f && Mathf.Abs(transform.position.x) <= 15f &&
+                Mathf.Abs(transform.position.z) <= 13f) return;
+
+            var slot = (int)(NetworkObjectId % 7);
+            body.isKinematic = false;
+            body.velocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            transform.SetPositionAndRotation(new Vector3(-9f + slot * 3f, 1f, 0f), Quaternion.identity);
+            syncedPosition.Value = transform.position;
+            syncedRotation.Value = transform.rotation;
+            dodgeballThrowArmed = false;
         }
     }
 }

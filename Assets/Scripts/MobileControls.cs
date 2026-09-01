@@ -42,7 +42,8 @@ namespace ClubhousePC
             foreach (var touch in Input.touches)
             {
                 var position = new Vector2(touch.position.x, touch.position.y);
-                if (IsOverButton(position)) continue;
+                var guiPosition = new Vector2(position.x, Screen.height - position.y);
+                if (HandleButtonTouch(guiPosition, touch.phase)) continue;
 
                 if (touch.phase == TouchPhase.Began)
                 {
@@ -76,11 +77,31 @@ namespace ClubhousePC
             }
         }
 
-        private bool IsOverButton(Vector2 p)
+        private bool HandleButtonTouch(Vector2 point, TouchPhase phase)
         {
-            var fromTop = Screen.height - p.y;
-            return p.x > Screen.width - 310 && fromTop > Screen.height - 290 ||
-                   p.x > Screen.width - 190 && fromTop < 240;
+            if (VoiceRect().Contains(point))
+            {
+                PushToTalkHeld = phase != TouchPhase.Ended && phase != TouchPhase.Canceled;
+                return true;
+            }
+
+            if (phase != TouchPhase.Began) return IsOverButton(point);
+            if (JumpRect().Contains(point)) jump = true;
+            else if (CrouchRect().Contains(point)) Crouching = !Crouching;
+            else if (GrabRect().Contains(point)) grab = true;
+            else if (ThrowRect().Contains(point)) throwBall = true;
+            else if (WatchRect().Contains(point)) watch = true;
+            else if (AdminRect().Contains(point)) admin = true;
+            else return false;
+            return true;
+        }
+
+        private static bool IsOverButton(Vector2 point)
+        {
+            return JumpRect().Contains(point) || CrouchRect().Contains(point) ||
+                   GrabRect().Contains(point) || ThrowRect().Contains(point) ||
+                   VoiceRect().Contains(point) || WatchRect().Contains(point) ||
+                   AdminRect().Contains(point);
         }
 
         private void OnGUI()
@@ -91,17 +112,23 @@ namespace ClubhousePC
             var knob = new Vector2(118, Screen.height - 128) + Move * 65f;
             GUI.Box(new Rect(knob.x - 24, knob.y - 24, 48, 48), "●");
 
-            if (GUI.Button(new Rect(Screen.width - 142, Screen.height - 152, 120, 55), "JUMP")) jump = true;
-            if (GUI.Button(new Rect(Screen.width - 142, Screen.height - 217, 120, 55), Crouching ? "STAND" : "CROUCH"))
-                Crouching = !Crouching;
-            if (GUI.Button(new Rect(Screen.width - 278, Screen.height - 152, 120, 55), "GRAB")) grab = true;
-            if (GUI.Button(new Rect(Screen.width - 142, Screen.height - 87, 120, 55), "THROW")) throwBall = true;
-            PushToTalkHeld = GUI.RepeatButton(new Rect(Screen.width - 278, Screen.height - 87, 120, 55), "HOLD TO TALK");
-            if (GUI.Button(new Rect(Screen.width - 142, 18, 120, 48), "WATCH")) watch = true;
+            GUI.Box(JumpRect(), "JUMP");
+            GUI.Box(CrouchRect(), Crouching ? "STAND" : "CROUCH");
+            GUI.Box(GrabRect(), "GRAB");
+            GUI.Box(ThrowRect(), "THROW");
+            GUI.Box(VoiceRect(), "HOLD TO TALK");
+            GUI.Box(WatchRect(), "WATCH");
             foreach (var player in FindObjectsOfType<NetworkPlayer>())
-                if (player.IsOwner && player.IsAdmin.Value &&
-                    GUI.Button(new Rect(Screen.width - 278, 18, 120, 48), "ADMIN")) admin = true;
+                if (player.IsOwner && player.IsAdmin.Value) GUI.Box(AdminRect(), "ADMIN");
         }
+
+        private static Rect JumpRect() => new(Screen.width - 142, Screen.height - 152, 120, 55);
+        private static Rect CrouchRect() => new(Screen.width - 142, Screen.height - 217, 120, 55);
+        private static Rect GrabRect() => new(Screen.width - 278, Screen.height - 152, 120, 55);
+        private static Rect ThrowRect() => new(Screen.width - 142, Screen.height - 87, 120, 55);
+        private static Rect VoiceRect() => new(Screen.width - 278, Screen.height - 87, 120, 55);
+        private static Rect WatchRect() => new(Screen.width - 142, 18, 120, 48);
+        private static Rect AdminRect() => new(Screen.width - 278, 18, 120, 48);
 
         public Vector2 ConsumeLook() { var value = LookDelta; LookDelta = Vector2.zero; return value; }
         public bool ConsumeJump() => Consume(ref jump);
