@@ -42,25 +42,34 @@ jobs:
           name: BlubRoom-Xcode
           path: ios-project
 
-      - name: Find and compile application
+      - name: Compile application
         working-directory: ios-project
         run: |
-          echo "Searching for the Xcode project..."
-          find . -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
+          xcodebuild \
+            -project "iOS/Unity-iPhone.xcodeproj" \
+            -scheme "Unity-iPhone" \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CONFIGURATION_BUILD_DIR="$PWD/output"
 
-          WORKSPACE=$(find . -name "*.xcworkspace" ! -name "project.xcworkspace" -print -quit)
-          PROJECT=$(find . -name "Unity-iPhone.xcodeproj" -print -quit)
+      - name: Package unsigned IPA
+        working-directory: ios-project
+        run: |
+          APP_PATH=$(find output -maxdepth 1 -name "*.app" -print -quit)
 
-          if [ -n "$WORKSPACE" ]; then
-            echo "Using workspace: $WORKSPACE"
-            xcodebuild \
-              -workspace "$WORKSPACE" \
-              -scheme Unity-iPhone \
-              -configuration Release \
-              -sdk iphoneos \
-              CODE_SIGNING_ALLOWED=NO \
-              CONFIGURATION_BUILD_DIR="$PWD/output"
-          elif [ -n "$PROJECT" ]; then
-            echo "Using project: $PROJECT"
-            xcodebuild \
-              -project "$PROJECT"
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No compiled app was found."
+            exit 1
+          fi
+
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload BlubRoom-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlubRoom-iOS
+          path: ios-project/BlubRoom-unsigned.ipa
