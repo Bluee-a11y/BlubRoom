@@ -33,7 +33,7 @@ jobs:
   make-ipa:
     name: Compile unsigned IPA
     needs: unity-build
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - name: Download Xcode project
@@ -41,6 +41,11 @@ jobs:
         with:
           name: BlubRoom-Xcode
           path: ios-project
+
+      - name: Select compatible Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "15.4"
 
       - name: Compile application
         working-directory: ios-project
